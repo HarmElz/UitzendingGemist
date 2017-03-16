@@ -13,35 +13,33 @@ var Presenter = {
   },
 
   getVideoURL: function(token, id, callback){
-    first = -1
-    last = -1
-
-    for(i=0; i<token.length;i++) {
-      if(i > 4 && i < token.length - 4){
-        if(!isNaN(token[i])) {
-          if(first < 0) {
-            first = i
-          } else if(last < 0){
-            last = i
-          }
-        }
+    url = "http://ida.omroep.nl/app.php/" + id + "?adaptive=yes&token=" + token;
+    UitzendingGemist.getJson(url, function(data){
+    var items = data.items[0];
+    info_url_a = '';
+    info_url_h = '';
+    info_url_l = '';
+    for(var i=0;i < items.length; i++) {
+      var item = items[i];
+      if(item.url!=null) {
+	if(item.label=='Adaptive') info_url_a = item.url;
+        if(item.label=='Hoog') info_url_h = item.url;  
+	if(item.label=='Live') info_url_l = item.url;
       }
     }
 
-    splits = token.split('')
-    firstValue = splits[first]
-    lastValue = splits[last]
-    splits[first] = lastValue
-    splits[last] = firstValue
+    if(info_url_l!='') {
+	callback(info_url_l);
+	return;
+    }
 
-    url = "http://ida.omroep.nl/odi/?prid=" + id + "&puboptions=adaptive&adaptive=yes&part=1&token=" + splits.join('')
-
-    UitzendingGemist.get(url, function(data){
-      stream_url = data['streams'][0].split('&')[0]
-
-      UitzendingGemist.get(stream_url, function(data){
-        callback(data['url'])
-      }, showAlert)
+    info_url = info_url_a;
+    if(info_url_h!='') info_url = info_url_h;
+    var spls = info_url.split('?');
+    var info_url = spls[0];
+    UitzendingGemist.getJson(info_url+'?extension=m3u8&type=json', function(data2){
+	callback(data2.url);
+    }, showAlert);
     }, showAlert)
   },
 
@@ -77,8 +75,22 @@ var Presenter = {
 
     episodeID = element.getAttribute("episode")
     seriesID = element.getAttribute("series")
+    channel = element.getAttribute("channel")
+    hash = element.getAttribute("hash")
 
     switch(view) {
+      case "live":
+        resourceLoader.loadResource(resourceLoader.BASEURL + "templates/Live.xml.js",
+          {},
+          function(resource) {
+            if (resource) {
+              var doc = self.makeDocument(resource);
+              doc.addEventListener("select", self.load.bind(self));
+              self.menuBarItemPresenter.call(self, doc, element);
+            }
+          }
+        )
+      break
       case "popular":
         Episode.popular(function(episodes){
           resourceLoader.loadResource(resourceLoader.BASEURL + "templates/Popular.xml.js",
@@ -146,6 +158,39 @@ var Presenter = {
           player.playlist.push(mediaItem);
           player.present();
         })
+      break
+      case "liveVideo":
+        var meta_url = 'http://npo.nl/live/npo-'+channel;
+        request = new XMLHttpRequest()
+        request.open("GET", meta_url);
+        request.addEventListener("load", function(){
+          var ep = request.responseText.indexOf('video-player-container');
+          var eq = request.responseText.indexOf('>', ep);
+	        var eps = request.responseText.substring(ep, eq);
+	        var fp = eps.indexOf('data-prid="');
+	        var fq = eps.indexOf('"', fp+11);
+	        var meta = eps.substring(fp+11, fq);
+
+	        var player = new Player();
+          var playlist = new Playlist();
+
+          self.getVideoURL(npoplayer.token, meta, function(url){
+            request = new XMLHttpRequest()
+            request.open("GET", url);
+            request.addEventListener("load", function(){
+	            var end = request.responseText.lastIndexOf('")');
+              var begin = request.responseText.indexOf('("');
+              var urlx = request.responseText.substring(begin+2, end).replace(/\\/g, '');
+	            var mediaItem = new MediaItem("video", urlx);
+
+              player.playlist = playlist;
+              player.playlist.push(mediaItem);
+              player.present();
+	          });
+	          request.send();
+          });
+	      });
+        request.send();
       break
     }
   },

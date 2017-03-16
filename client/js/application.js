@@ -2,20 +2,34 @@ var resourceLoader;
 
 npoplayer = {};
 
+var TimerID;
+
+function updateToken() {
+  var templateXHR = new XMLHttpRequest();
+   templateXHR.responseType = "document";
+   templateXHR.addEventListener("load", function() {parseJsonToken(templateXHR.responseText);}, false);
+   templateXHR.open("GET", 'http://ida.omroep.nl/app.php/auth', true);
+   templateXHR.send();
+}
+
+function parseJsonToken(information) {
+   var result = JSON.parse(information);
+   npoplayer.token = result.token;
+}
+
 App.onLaunch = function(options) {
   var javascriptFiles = [
     `${options.BASEURL}js/ResourceLoader.js`,
     `${options.BASEURL}js/Presenter.js`,
     `${options.BASEURL}js/uitzendinggemist.js`,
     `${options.BASEURL}js/Series.js`,
-    `${options.BASEURL}js/Episode.js`,
-    'http://ida.omroep.nl/npoplayer/i.js'
+    `${options.BASEURL}js/Episode.js`
   ];
+  updateToken();
 
   evaluateScripts(javascriptFiles, function(success) {
     if (success) {
       resourceLoader = new ResourceLoader(options.BASEURL);
-
       resourceLoader.loadResource(
         `${options.BASEURL}templates/MenuBar.xml.js`,
         null,
@@ -26,9 +40,20 @@ App.onLaunch = function(options) {
         }
       )
     } else {
+      var alert = createAlert("Evaluate Scripts Error", "There was an error attempting to evaluate the external JavaScript files.\n\n Please check your network connection and try again later.");
+            navigationDocument.presentModal(alert);
       throw ("Unable to evaluate scripts.");
     }
   });
+}
+
+App.onResume = function (options) {
+  updateToken();
+  TimerID = setInterval(updateToken, 7200000);
+}
+
+App.onSuspend = function (options) {
+  clearInterval(TimerID);
 }
 
 var showAlert = function(error) {
